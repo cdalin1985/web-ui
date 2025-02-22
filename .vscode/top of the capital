@@ -1,0 +1,427 @@
+import { useState, useEffect, useCallback, useMemo } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Trophy, Swords, Clock, AlertCircle, User } from "lucide-react";
+import { db, auth, storage } from "@/lib/firebase";
+import { 
+  collection, 
+  getDocs, 
+  updateDoc, 
+  doc, 
+  addDoc, 
+  onSnapshot,
+  query,
+  where,
+  orderBy,
+  serverTimestamp,
+  runTransaction
+} from "firebase/firestore";
+import { 
+  signInWithEmailAndPassword, 
+  createUserWithEmailAndPassword,
+  signOut,
+  onAuthStateChanged
+} from "firebase/auth";
+import { getDownloadURL, ref, uploadBytesResumable } from "firebase/storage";
+import { loadStripe } from "@stripe/stripe-js";
+import { useTheme } from "next-themes";
+
+const GAME_TYPES = {
+  EIGHT_BALL: "8-Ball",
+  NINE_BALL: "9-Ball",
+  STRAIGHT_POOL: "Straight Pool"
+};
+
+const WIN_CONDITIONS = {
+  BEST_OF_3: "Best of 3",
+  BEST_OF_5: "Best of 5",
+  BEST_OF_7: "Best of 7"
+};
+
+const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLIC_KEY);
+
+const useAuth = () => {
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setUser(user);
+      setLoading(false);
+    });
+    return unsubscribe;
+  }, []);
+
+  return { user, loading };
+};
+
+const AuthForm = ({ onSuccess }) => {
+  const [isSignUp, setIsSignUp] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
+
+    try {
+      if (isSignUp) {
+        const { user } = await createUserWithEmailAndPassword(auth, email, password);
+        await addDoc(collection(db, "players"), {
+          uid: user.uid,
+          email: user.email,
+          name: email.split("@")[0],
+          rating: 1200,
+          gamesPlayed: 0,
+          wins: 0,
+          losses: 0,
+          createdAt: serverTimestamp()
+        });
+      } else {
+        await signInWithEmailAndPassword(auth, email, password);
+      }
+      onSuccess?.();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div className="space-y-2">
+        <Label htmlFor="email">Email</Label>
+        <Input
+          id="email"
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder="Enter your email"
+          required
+        />
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="password">Password</Label>
+        <Input
+          id="password"
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          placeholder="Enter your password"
+          required
+        />
+      </div>
+      {error && (
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+      <Button type="submit" className="w-full" disabled={loading}>
+        {loading ? "Processing..." : isSignUp ? "Sign Up" : "Sign In"}
+      </Button>
+      <Button
+        type="button"
+        variant="outline"
+        className="w-full"
+        onClick={() => setIsSignUp(!isSignUp)}
+      >
+        {isSignUp ? "Already have an account? Sign In" : "Need an account? Sign Up"}
+      </Button>
+    </form>
+  );
+};
+
+const ChallengeForm = ({ challenger, onClose }) => {
+  const [opponent, setOpponent] = useState("");
+  const [gameType, setGameType] = useState("");
+  const [winCondition, setWinCondition] = useState("");
+  const [wager, setWager] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
+
+    try {
+      const stripe = await stripePromise;
+      
+      // Create the challenge record
+      const challengeRef = await addDoc(collection(db, "challenges"), {
+        challengerId: challenger.id,
+        challengerName: challenger.name,
+        opponentId: opponent,
+        gameType,
+        winCondition,
+        wager,
+        status: "pending",
+        createdAt: serverTimestamp()
+      });
+
+      // If there's a wager, create a Stripe payment intent
+      if (wager > 0) {
+        const response = await fetch("/api/create-payment-intent", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ amount: wager * 100 }),
+        });
+        
+        const { clientSecret } = await response.json();
+        
+        const result = await stripe.confirmCardPayment(clientSecret);
+        if (result.error) {
+          throw new Error(result.error.message);
+        }
+
+        // Update challenge with payment info
+        await updateDoc(doc(db, "challenges", challengeRef.id), {
+          paymentIntentId: result.paymentIntent.id,
+          paid: true
+        });
+      }
+
+      onClose();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div className="space-y-2">
+        <Label htmlFor="opponent">Select Opponent</Label>
+        <Select value={opponent} onValueChange={setOpponent}>
+          <SelectTrigger>
+            <SelectValue placeholder="Choose opponent" />
+          </SelectTrigger>
+          <SelectContent>
+            {/* Opponent list would be populated here */}
+          </SelectContent>
+        </Select>
+      </div>
+      
+      <div className="space-y-2">
+        <Label htmlFor="gameType">Game Type</Label>
+        <Select value={gameType} onValueChange={setGameType}>
+          <SelectTrigger>
+            <SelectValue placeholder="Select game type" />
+          </SelectTrigger>
+          <SelectContent>
+            {Object.entries(GAME_TYPES).map(([key, value]) => (
+              <SelectItem key={key} value={key}>{value}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="winCondition">Win Condition</Label>
+        <Select value={winCondition} onValueChange={setWinCondition}>
+          <SelectTrigger>
+            <SelectValue placeholder="Select win condition" />
+          </SelectTrigger>
+          <SelectContent>
+            {Object.entries(WIN_CONDITIONS).map(([key, value]) => (
+              <SelectItem key={key} value={key}>{value}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="wager">Wager Amount ($)</Label>
+        <Input
+          id="wager"
+          type="number"
+          min="0"
+          step="5"
+          value={wager}
+          onChange={(e) => setWager(Number(e.target.value))}
+        />
+      </div>
+
+      {error && (
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+
+      <DialogFooter>
+        <Button type="button" variant="outline" onClick={onClose}>
+          Cancel
+        </Button>
+        <Button type="submit" disabled={loading}>
+          {loading ? "Processing..." : "Submit Challenge"}
+        </Button>
+      </DialogFooter>
+    </form>
+  );
+};
+
+const PlayerCard = ({ player, rank, onChallenge }) => {
+  const stats = useMemo(() => ({
+    winRate: player.gamesPlayed ? ((player.wins / player.gamesPlayed) * 100).toFixed(1) : 0,
+    avgPointsPerGame: player.gamesPlayed ? (player.totalPoints / player.gamesPlayed).toFixed(1) : 0
+  }), [player]);
+
+  return (
+    <Card className="hover:shadow-lg transition-shadow">
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+        <CardTitle className="text-sm font-medium">
+          #{rank} {player.name}
+        </CardTitle>
+        <Avatar className="h-9 w-9">
+          <AvatarImage src={player.avatar} alt={player.name} />
+          <AvatarFallback>
+            <User className="h-4 w-4" />
+          </AvatarFallback>
+        </Avatar>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-3 gap-4 text-sm">
+          <div className="flex flex-col">
+            <span className="text-muted-foreground">Rating</span>
+            <span className="font-medium">{player.rating}</span>
+          </div>
+          <div className="flex flex-col">
+            <span className="text-muted-foreground">Win Rate</span>
+            <span className="font-medium">{stats.winRate}%</span>
+          </div>
+          <div className="flex flex-col">
+            <span className="text-muted-foreground">Games</span>
+            <span className="font-medium">{player.gamesPlayed}</span>
+          </div>
+        </div>
+        <Button 
+          className="w-full mt-4"
+          onClick={() => onChallenge(player)}
+          variant="outline"
+        >
+          <Swords className="mr-2 h-4 w-4" />
+          Challenge
+        </Button>
+      </CardContent>
+    </Card>
+  );
+};
+
+export default function PoolLeaderboard() {
+  const { user, loading: authLoading } = useAuth();
+  const [players, setPlayers] = useState([]);
+  const [challenges, setChallenges] = useState([]);
+  const [selectedPlayer, setSelectedPlayer] = useState(null);
+  const [showChallengeDialog, setShowChallengeDialog] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const { theme, setTheme } = useTheme();
+
+  useEffect(() => {
+    const unsubscribe = onSnapshot(
+      query(collection(db, "players"), orderBy("rating", "desc")),
+      (snapshot) => {
+        const playersList = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        setPlayers(playersList);
+        setLoading(false);
+      }
+    );
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (!user) return;
+
+    const unsubscribe = onSnapshot(
+      query(
+        collection(db, "challenges"),
+        where("status", "==", "pending"),
+        orderBy("createdAt", "desc")
+      ),
+      (snapshot) => {
+        const challengesList = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        setChallenges(challengesList);
+      }
+    );
+    return () => unsubscribe();
+  }, [user]);
+
+  const handleChallenge = useCallback((player) => {
+    setSelectedPlayer(player);
+    setShowChallengeDialog(true);
+  }, []);
+
+  const handleSignOut = async () => {
+    try {
+      await signOut(auth);
+    } catch (error) {
+      console.error("Error signing out:", error);
+    }
+  };
+
+  if (authLoading) {
+    return <div className="flex justify-center items-center min-h-screen">
+      <Skeleton className="h-32 w-32 rounded-full" />
+    </div>;
+  }
+
+  return (
+    <div className="min-h-screen p-6 space-y-6">
+      <div className="flex justify-between items-center">
+        <h1 className="text-3xl font-bold flex items-center">
+          <Trophy className="mr-2 h-6 w-6" />
+          Helena Pool Rankings
+        </h1>
+        <div className="flex items-center gap-4">
+          <Switch
+            checked={theme === "dark"}
+            onCheckedChange={() => setTheme(theme === "dark" ? "light" : "dark")}
+          />
+          {user && (
+            <Button variant="outline" onClick={handleSignOut}>
+              Sign Out
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {!user ? (
+        <Card className="max-w-md mx-auto">
+          <CardHeader>
+            <CardTitle>Welcome to Helena Pool</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <AuthForm />
+          </CardContent>
+        </Card>
+      ) : (
+        <>
+          {challenges.length > 0 && (
+            <div className="space-y-2">
+              <h2 className="text-xl font-semibold flex items-center">
+                <Clock className="mr-2 h-5 w-5" />
+                Active Challenges
+              </h2>
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {challenges.map((challenge) => (
+                  <Card key={challenge.id} className="p-4
