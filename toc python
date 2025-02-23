@@ -1,0 +1,64 @@
+from flask import Flask, render_template, request, redirect, url_for
+from datetime import datetime
+
+app = Flask(__name__)
+
+# Player data structure
+players = [
+    {'id': 1, 'name': "Dan Hamper", 'rank': 1, 'fargo': 720, 'status': None},
+    {'id': 2, 'name': "David Smith", 'rank': 2, 'fargo': 715, 'status': None},
+    # ... add all 67 players
+    {'id': 20, 'name': "Mike Zahn", 'rank': 20, 'fargo': 650, 
+     'status': "Snow Bird, South for the Winter (Returning 10/30/2024)"},
+    # ... continue through all entries
+]
+
+# Challenge queue
+challenges = []
+
+@app.route('/')
+def index():
+    sorted_players = sorted(players, key=lambda x: x['rank'])
+    return render_template('index.html', players=sorted_players)
+
+@app.route('/challenge', methods=['POST'])
+def handle_challenge():
+    challenger_id = int(request.form['challenger'])
+    opponent_id = int(request.form['opponent'])
+    discipline = request.form['discipline']
+    race_to = int(request.form['race_to'])
+    location = request.form['location']
+    
+    challenges.append({
+        'challenger': challenger_id,
+        'opponent': opponent_id,
+        'discipline': discipline,
+        'race_to': race_to,
+        'location': location,
+        'timestamp': datetime.now()
+    })
+    
+    return redirect(url_for('index'))
+
+@app.route('/resolve-challenge', methods=['POST'])
+def resolve_challenge():
+    challenge_id = int(request.form['challenge_id'])
+    winner_id = int(request.form['winner_id'])
+    
+    challenge = challenges[challenge_id]
+    challenger = next(p for p in players if p['id'] == challenge['challenger'])
+    opponent = next(p for p in players if p['id'] == challenge['opponent'])
+    
+    # Update rankings
+    if winner_id == challenger['id']:
+        if challenger['rank'] > opponent['rank']:
+            challenger['rank'], opponent['rank'] = opponent['rank'], challenger['rank']
+    else:
+        if opponent['rank'] > challenger['rank']:
+            opponent['rank'], challenger['rank'] = challenger['rank'], opponent['rank']
+    
+    del challenges[challenge_id]
+    return redirect(url_for('index'))
+
+if __name__ == '__main__':
+    app.run(debug=True)
