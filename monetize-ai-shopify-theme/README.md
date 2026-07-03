@@ -18,6 +18,17 @@ This is a fresh Shopify theme-style project prepared for the **Five-Day AI Monet
 - Primary collection handle: `five-day-ai-monetization-launch`
 - Primary product: `Beginner AI Monetization System – Launch Bundle`
 
+
+## How to check the launch content
+
+Run this command from the repository root:
+
+```bash
+./monetize-ai-shopify-theme/scripts/check-launch-content.sh
+```
+
+This confirms the required launch copy, CTA links, cart reassurance text, mobile sticky CTA, and JSON files are present.
+
 ## Launch rules followed
 
 - No fake scarcity claims.
