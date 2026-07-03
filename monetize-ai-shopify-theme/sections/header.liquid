@@ -1,0 +1,15 @@
+<header class="site-header">
+  <a class="site-header__brand" href="{{ routes.root_url }}">{{ shop.name }}</a>
+  <nav class="site-header__nav" aria-label="Main navigation">
+    <a href="/collections/five-day-ai-monetization-launch">Launch Collection</a>
+    <a href="/products/beginner-ai-monetization-system-launch-bundle">Launch Bundle</a>
+    <a href="{{ routes.cart_url }}">Cart</a>
+  </nav>
+</header>
+
+{% schema %}
+{
+  "name": "Header",
+  "settings": []
+}
+{% endschema %}
