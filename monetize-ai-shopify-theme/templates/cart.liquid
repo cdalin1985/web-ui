@@ -1,0 +1,25 @@
+<section class="cart-page">
+  <h1>Your cart</h1>
+
+  {% if cart.item_count > 0 %}
+    <form action="{{ routes.cart_url }}" method="post" novalidate>
+      {% for item in cart.items %}
+        <div class="cart-item">
+          <a href="{{ item.url }}">{{ item.product.title }}</a>
+          <p>Quantity: {{ item.quantity }}</p>
+          <p>{{ item.final_line_price | money }}</p>
+        </div>
+      {% endfor %}
+
+      {% render 'cart-reassurance' %}
+
+      <div class="cart-page__checkout">
+        <p class="cart-page__total">Subtotal: {{ cart.total_price | money }}</p>
+        <button class="button button--primary" type="submit" name="checkout">Checkout</button>
+      </div>
+    </form>
+  {% else %}
+    <p>Your cart is currently empty.</p>
+    <a class="button button--primary" href="/collections/five-day-ai-monetization-launch">Start Building With AI Today</a>
+  {% endif %}
+</section>

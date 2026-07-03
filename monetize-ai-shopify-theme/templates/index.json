@@ -1,0 +1,16 @@
+{
+  "sections": {
+    "hero": {
+      "type": "hero",
+      "settings": {}
+    },
+    "launch_bundle": {
+      "type": "launch-bundle",
+      "settings": {}
+    }
+  },
+  "order": [
+    "hero",
+    "launch_bundle"
+  ]
+}
