@@ -127,6 +127,16 @@
   </form>
 </dialog>
 
+<dialog id="askDialog">
+  <form method="dialog">
+    <p id="askMsg" style="margin:0"></p>
+    <menu>
+      <button value="no" id="askNo">Cancel</button>
+      <button class="primary" value="yes" id="askYes">OK</button>
+    </menu>
+  </form>
+</dialog>
+
 <script>
 (() => {
   'use strict';
@@ -159,6 +169,16 @@
     const t = totals(g), dir = g.rule === 'low' ? 1 : -1;
     return g.players.map(p => ({ ...p, score: t[p.id] })).sort((a, b) => dir * (a.score - b.score));
   };
+  function ask(msg, info) {
+    return new Promise(res => {
+      const d = $('#askDialog');
+      $('#askMsg').textContent = msg;
+      $('#askNo').hidden = !!info;
+      d.returnValue = '';
+      d.addEventListener('close', () => res(d.returnValue === 'yes'), { once: true });
+      d.showModal();
+    });
+  }
   const fmtTime = ts => new Date(ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 
   function newGame({ name, players, target, rule }) {
@@ -309,9 +329,9 @@
     $('#main').querySelectorAll('[data-custom]').forEach(i => i.onkeydown = e => {
       if (e.key === 'Enter') { addScore(i.dataset.custom, parseInt(i.value, 10)); }
     });
-    $('#main').querySelectorAll('[data-remove]').forEach(b => b.onclick = () => {
+    $('#main').querySelectorAll('[data-remove]').forEach(b => b.onclick = async () => {
       const p = g.players.find(x => x.id === b.dataset.remove);
-      if (p && confirm(`Remove ${p.name} and their scores?`)) {
+      if (p && await ask(`Remove ${p.name} and their scores?`)) {
         g.players = g.players.filter(x => x.id !== p.id);
         g.events = g.events.filter(e => e.pid !== p.id);
         save(); render();
@@ -323,9 +343,9 @@
       save(); render();
     };
     $('#undo').onclick = () => { g.events.pop(); save(); render(); };
-    $('#resetScores').onclick = () => { if (confirm('Reset all scores in this game?')) { g.events = []; save(); render(); } };
-    $('#deleteGame').onclick = () => {
-      if (!confirm(`Delete "${g.name}"?`)) return;
+    $('#resetScores').onclick = async () => { if (await ask('Reset all scores in this game?')) { g.events = []; save(); render(); } };
+    $('#deleteGame').onclick = async () => {
+      if (!await ask(`Delete "${g.name}"?`)) return;
       state.games = state.games.filter(x => x.id !== g.id);
       state.current = state.games.length ? state.games[0].id : null;
       save(); render();
@@ -361,10 +381,10 @@
     try {
       const s = JSON.parse(await file.text());
       if (!s || !Array.isArray(s.games)) throw new Error('bad shape');
-      if (!confirm('Replace all current data with the imported file?')) return;
+      if (!await ask('Replace all current data with the imported file?')) return;
       state = { games: s.games, current: s.current || (s.games[0] && s.games[0].id) || null };
       save(); render();
-    } catch (err) { alert('That file is not a valid Scorekeep export.'); }
+    } catch (err) { ask('That file is not a valid Scorekeep export.', true); }
   };
 
   render();
