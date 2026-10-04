@@ -1,0 +1,394 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scorekeep</title>
+<style>
+  :root {
+    --bg: #f4f5f7; --panel: #ffffff; --ink: #1b1f24; --muted: #6a727c; --line: #e3e6ea;
+    --accent: #2f6fed; --good: #1a9b5b; --bad: #d4453b; --shadow: 0 1px 3px rgba(0,0,0,.08);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#12151a; --panel:#1b2027; --ink:#e8ebef; --muted:#8c95a1; --line:#2b323b; --accent:#5b8cff; --shadow:none; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; font:15px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; background:var(--bg); color:var(--ink); }
+  button, input, select { font:inherit; color:inherit; }
+  button { cursor:pointer; border:1px solid var(--line); background:var(--panel); border-radius:8px; padding:6px 12px; }
+  button:hover { border-color:var(--accent); }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  button.danger:hover { border-color:var(--bad); color:var(--bad); }
+  input, select { border:1px solid var(--line); background:var(--panel); border-radius:8px; padding:7px 10px; min-width:0; }
+  input:focus, select:focus, button:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
+
+  .app { display:grid; grid-template-columns:240px 1fr; min-height:100vh; }
+  aside { background:var(--panel); border-right:1px solid var(--line); padding:18px 14px; display:flex; flex-direction:column; gap:14px; }
+  aside h1 { margin:0; font-size:20px; letter-spacing:.2px; }
+  .games { display:flex; flex-direction:column; gap:4px; overflow:auto; }
+  .game-item { text-align:left; border:1px solid transparent; background:none; display:flex; justify-content:space-between; gap:8px; }
+  .game-item.active { background:color-mix(in srgb,var(--accent) 12%,transparent); border-color:var(--accent); }
+  .game-item small { color:var(--muted); }
+  .side-actions { margin-top:auto; display:flex; flex-direction:column; gap:6px; }
+
+  main { padding:22px; max-width:1200px; width:100%; }
+  header.top { display:flex; flex-wrap:wrap; gap:10px; align-items:center; justify-content:space-between; margin-bottom:16px; }
+  header.top h2 { margin:0; font-size:22px; }
+  .toolbar { display:flex; gap:8px; flex-wrap:wrap; }
+
+  .tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:12px; margin-bottom:16px; }
+  .tile, .card { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:14px 16px; box-shadow:var(--shadow); }
+  .tile .label { color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.6px; }
+  .tile .value { font-size:26px; font-weight:700; margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .tile .sub { color:var(--muted); font-size:13px; }
+
+  .grid { display:grid; grid-template-columns:3fr 2fr; gap:16px; }
+  .card h3 { margin:0 0 10px; font-size:15px; }
+  .card.full { grid-column:1/-1; }
+
+  .banner { background:var(--good); color:#fff; border-radius:12px; padding:12px 16px; margin-bottom:16px; font-weight:600; }
+
+  .row { display:grid; grid-template-columns:28px 1fr auto; gap:10px; align-items:center; padding:10px 0; border-top:1px solid var(--line); }
+  .row:first-of-type { border-top:0; }
+  .rank { color:var(--muted); font-weight:700; text-align:center; }
+  .pname { font-weight:600; display:flex; align-items:center; gap:8px; }
+  .dot { width:10px; height:10px; border-radius:50%; flex:none; }
+  .bar { height:6px; background:var(--line); border-radius:3px; margin-top:6px; overflow:hidden; }
+  .bar > span { display:block; height:100%; border-radius:3px; transition:width .25s; }
+  .score-box { display:flex; align-items:center; gap:6px; flex-wrap:wrap; justify-content:flex-end; }
+  .score { font-size:24px; font-weight:800; min-width:56px; text-align:right; font-variant-numeric:tabular-nums; }
+  .quick button { padding:4px 9px; font-weight:600; }
+  .custom { width:64px; }
+  .x { border:0; background:none; color:var(--muted); padding:2px 6px; }
+  .x:hover { color:var(--bad); }
+
+  .add { display:flex; gap:8px; margin-top:12px; }
+  .add input { flex:1; }
+
+  .log { max-height:360px; overflow:auto; }
+  .log-item { display:flex; justify-content:space-between; gap:8px; padding:7px 0; border-top:1px solid var(--line); font-size:14px; }
+  .log-item:first-child { border-top:0; }
+  .log-item time { color:var(--muted); font-size:12px; }
+  .pos { color:var(--good); font-weight:700; } .neg { color:var(--bad); font-weight:700; }
+  .empty { color:var(--muted); padding:18px 0; text-align:center; }
+  .legend { display:flex; gap:14px; flex-wrap:wrap; margin-top:8px; font-size:13px; color:var(--muted); }
+  .legend i { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:5px; }
+  svg { width:100%; height:auto; display:block; }
+  svg text { fill:var(--muted); font-size:11px; }
+
+  dialog { border:1px solid var(--line); border-radius:12px; background:var(--panel); color:var(--ink); padding:20px; width:min(420px,92vw); }
+  dialog::backdrop { background:rgba(0,0,0,.4); }
+  dialog form { display:flex; flex-direction:column; gap:10px; }
+  dialog label { display:flex; flex-direction:column; gap:4px; font-size:13px; color:var(--muted); }
+  dialog menu { display:flex; justify-content:flex-end; gap:8px; margin:6px 0 0; padding:0; }
+
+  @media (max-width:860px) {
+    .app { grid-template-columns:1fr; }
+    aside { border-right:0; border-bottom:1px solid var(--line); flex-direction:row; flex-wrap:wrap; align-items:center; }
+    .games { flex-direction:row; flex-wrap:wrap; }
+    .side-actions { margin:0; flex-direction:row; }
+    .grid { grid-template-columns:1fr; }
+    main { padding:14px; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside>
+    <h1>🏆 Scorekeep</h1>
+    <div class="games" id="games"></div>
+    <div class="side-actions">
+      <button class="primary" id="newGame">+ New game</button>
+      <button id="exportBtn">Export JSON</button>
+      <button id="importBtn">Import JSON</button>
+      <input type="file" id="importFile" accept="application/json" hidden>
+    </div>
+  </aside>
+
+  <main id="main"></main>
+</div>
+
+<dialog id="gameDialog">
+  <form method="dialog" id="gameForm">
+    <h3 style="margin:0">New game</h3>
+    <label>Name <input name="name" required maxlength="40" placeholder="Friday night pool"></label>
+    <label>Players (comma separated) <input name="players" placeholder="Alex, Sam, Jordan"></label>
+    <label>Target score (optional) <input name="target" type="number" min="1" step="1" placeholder="e.g. 100"></label>
+    <label>Winning rule
+      <select name="rule">
+        <option value="high">Highest score wins</option>
+        <option value="low">Lowest score wins</option>
+      </select>
+    </label>
+    <menu>
+      <button type="button" id="cancelGame">Cancel</button>
+      <button class="primary" value="ok">Create</button>
+    </menu>
+  </form>
+</dialog>
+
+<dialog id="askDialog">
+  <form method="dialog">
+    <p id="askMsg" style="margin:0"></p>
+    <menu>
+      <button value="no" id="askNo">Cancel</button>
+      <button class="primary" value="yes" id="askYes">OK</button>
+    </menu>
+  </form>
+</dialog>
+
+<script>
+(() => {
+  'use strict';
+  const KEY = 'scorekeep.v1';
+  const COLORS = ['#2f6fed','#e5484d','#30a46c','#f5a524','#8e4ec6','#12a594','#e93d82','#6e7b8b'];
+  const uid = () => Math.random().toString(36).slice(2, 10);
+  const $ = s => document.querySelector(s);
+  const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+  let state = load();
+
+  function load() {
+    try {
+      const s = JSON.parse(localStorage.getItem(KEY));
+      if (s && Array.isArray(s.games)) return s;
+    } catch (e) { /* fall through */ }
+    return { games: [], current: null };
+  }
+  function save() {
+    try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) { /* storage unavailable */ }
+  }
+
+  const game = () => state.games.find(g => g.id === state.current) || null;
+  const totals = g => {
+    const t = Object.fromEntries(g.players.map(p => [p.id, 0]));
+    g.events.forEach(e => { if (e.pid in t) t[e.pid] += e.delta; });
+    return t;
+  };
+  const ranked = g => {
+    const t = totals(g), dir = g.rule === 'low' ? 1 : -1;
+    return g.players.map(p => ({ ...p, score: t[p.id] })).sort((a, b) => dir * (a.score - b.score));
+  };
+  function ask(msg, info) {
+    return new Promise(res => {
+      const d = $('#askDialog');
+      $('#askMsg').textContent = msg;
+      $('#askNo').hidden = !!info;
+      d.returnValue = '';
+      d.addEventListener('close', () => res(d.returnValue === 'yes'), { once: true });
+      d.showModal();
+    });
+  }
+  const fmtTime = ts => new Date(ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+
+  function newGame({ name, players, target, rule }) {
+    const g = { id: uid(), name, rule, target: target || null, players: [], events: [], created: Date.now() };
+    players.forEach(n => addPlayer(g, n));
+    state.games.push(g);
+    state.current = g.id;
+    save(); render();
+  }
+  function addPlayer(g, name) {
+    name = name.trim();
+    if (!name) return;
+    g.players.push({ id: uid(), name, color: COLORS[g.players.length % COLORS.length] });
+  }
+  function addScore(pid, delta) {
+    const g = game();
+    if (!g || !Number.isFinite(delta) || delta === 0) return;
+    g.events.push({ id: uid(), pid, delta, ts: Date.now() });
+    save(); render();
+  }
+
+  // ---------- rendering ----------
+  function render() {
+    renderSidebar();
+    const g = game();
+    $('#main').innerHTML = g ? dashboard(g) : welcome();
+    bindMain(g);
+  }
+
+  function renderSidebar() {
+    const el = $('#games');
+    el.innerHTML = state.games.length
+      ? state.games.map(g => `<button class="game-item ${g.id === state.current ? 'active' : ''}" data-id="${g.id}">
+          <span>${esc(g.name)}</span><small>${g.players.length}p</small></button>`).join('')
+      : '<div class="empty">No games yet</div>';
+    el.querySelectorAll('.game-item').forEach(b => b.onclick = () => { state.current = b.dataset.id; save(); render(); });
+  }
+
+  function welcome() {
+    return `<div class="card" style="max-width:520px;margin:60px auto;text-align:center">
+      <h2 style="margin-top:0">Welcome to Scorekeep</h2>
+      <p style="color:var(--muted)">Create a game, add players, and track scores on a live dashboard.</p>
+      <button class="primary" id="welcomeNew">+ New game</button></div>`;
+  }
+
+  function dashboard(g) {
+    const r = ranked(g), t = totals(g);
+    const total = g.events.reduce((s, e) => s + e.delta, 0);
+    const leader = r[0], second = r[1];
+    const lead = leader && second ? Math.abs(leader.score - second.score) : 0;
+    const max = Math.max(1, ...r.map(p => Math.abs(p.score)));
+    const winner = g.target && leader && (g.rule === 'low' ? false : leader.score >= g.target) ? leader : null;
+    const avg = g.events.length ? (total / g.events.length).toFixed(1) : '0';
+
+    return `
+    <header class="top">
+      <h2>${esc(g.name)}</h2>
+      <div class="toolbar">
+        <button id="undo" ${g.events.length ? '' : 'disabled'}>↶ Undo</button>
+        <button id="resetScores" class="danger">Reset scores</button>
+        <button id="deleteGame" class="danger">Delete game</button>
+      </div>
+    </header>
+    ${winner ? `<div class="banner">🎉 ${esc(winner.name)} reached ${g.target} points and wins!</div>` : ''}
+    <section class="tiles">
+      <div class="tile"><div class="label">${g.rule === 'low' ? 'Lowest' : 'Leader'}</div>
+        <div class="value">${leader && g.events.length ? esc(leader.name) : '—'}</div>
+        <div class="sub">${leader && g.events.length ? leader.score + ' pts' : 'No scores yet'}</div></div>
+      <div class="tile"><div class="label">Lead margin</div><div class="value">${lead}</div><div class="sub">over 2nd place</div></div>
+      <div class="tile"><div class="label">Total points</div><div class="value">${total}</div><div class="sub">${g.players.length} players</div></div>
+      <div class="tile"><div class="label">Entries</div><div class="value">${g.events.length}</div><div class="sub">avg ${avg} per entry</div></div>
+      ${g.target ? `<div class="tile"><div class="label">Target</div><div class="value">${g.target}</div>
+        <div class="sub">${g.rule === 'low' ? 'lowest wins' : leader ? Math.max(0, g.target - leader.score) + ' to go' : ''}</div></div>` : ''}
+    </section>
+    <div class="grid">
+      <section class="card">
+        <h3>Leaderboard</h3>
+        ${r.length ? r.map((p, i) => `
+          <div class="row">
+            <div class="rank">${i + 1}</div>
+            <div>
+              <div class="pname"><span class="dot" style="background:${p.color}"></span>${esc(p.name)}
+                <button class="x" data-remove="${p.id}" title="Remove player" aria-label="Remove ${esc(p.name)}">✕</button></div>
+              <div class="bar"><span style="width:${Math.max(0, Math.abs(t[p.id]) / (g.target || max) * 100).toFixed(1)}%;background:${p.color}"></span></div>
+            </div>
+            <div class="score-box">
+              <div class="score">${p.score}</div>
+              <span class="quick">
+                <button data-pid="${p.id}" data-d="-1">−1</button>
+                <button data-pid="${p.id}" data-d="1">+1</button>
+                <button data-pid="${p.id}" data-d="5">+5</button>
+                <button data-pid="${p.id}" data-d="10">+10</button>
+              </span>
+              <input class="custom" type="number" step="1" placeholder="±" data-custom="${p.id}" aria-label="Custom points for ${esc(p.name)}">
+            </div>
+          </div>`).join('') : '<div class="empty">Add a player to begin</div>'}
+        <form class="add" id="addPlayer"><input name="name" placeholder="Add player" maxlength="30" required><button class="primary">Add</button></form>
+      </section>
+      <section class="card">
+        <h3>Recent activity</h3>
+        <div class="log">${activity(g)}</div>
+      </section>
+      <section class="card full">
+        <h3>Score progression</h3>
+        ${chart(g)}
+        <div class="legend">${g.players.map(p => `<span><i style="background:${p.color}"></i>${esc(p.name)}</span>`).join('')}</div>
+      </section>
+    </div>`;
+  }
+
+  function activity(g) {
+    if (!g.events.length) return '<div class="empty">Nothing yet. Tap +1 on a player.</div>';
+    const byId = Object.fromEntries(g.players.map(p => [p.id, p]));
+    return g.events.slice(-30).reverse().map(e => {
+      const p = byId[e.pid];
+      return `<div class="log-item"><span>${p ? esc(p.name) : '(removed)'} <span class="${e.delta > 0 ? 'pos' : 'neg'}">${e.delta > 0 ? '+' : ''}${e.delta}</span></span><time>${fmtTime(e.ts)}</time></div>`;
+    }).join('');
+  }
+
+  function chart(g) {
+    if (!g.events.length || !g.players.length) return '<div class="empty">The chart appears after the first score.</div>';
+    const W = 700, H = 220, L = 34, R = 10, T = 10, B = 22;
+    const run = Object.fromEntries(g.players.map(p => [p.id, [0]]));
+    const cur = Object.fromEntries(g.players.map(p => [p.id, 0]));
+    g.events.forEach(e => {
+      if (!(e.pid in cur)) return;
+      cur[e.pid] += e.delta;
+      g.players.forEach(p => run[p.id].push(cur[p.id]));
+    });
+    const n = run[g.players[0].id].length - 1;
+    const all = Object.values(run).flat();
+    let lo = Math.min(0, ...all), hi = Math.max(1, ...all);
+    if (g.target) hi = Math.max(hi, g.target);
+    const x = i => L + (n ? i / n : 0) * (W - L - R);
+    const y = v => T + (1 - (v - lo) / (hi - lo)) * (H - T - B);
+    const ticks = [lo, (lo + hi) / 2, hi].map(v => Math.round(v));
+    const grid = ticks.map(v => `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)"/><text x="${L - 5}" y="${y(v) + 4}" text-anchor="end">${v}</text>`).join('');
+    const target = g.target ? `<line x1="${L}" x2="${W - R}" y1="${y(g.target)}" y2="${y(g.target)}" stroke="var(--muted)" stroke-dasharray="4 4"/>` : '';
+    const lines = g.players.map(p => `<polyline fill="none" stroke="${p.color}" stroke-width="2.5" stroke-linejoin="round" points="${run[p.id].map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ')}"/>`).join('');
+    return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Cumulative score per player">${grid}${target}${lines}<text x="${L}" y="${H - 4}">start</text><text x="${W - R}" y="${H - 4}" text-anchor="end">entry ${n}</text></svg>`;
+  }
+
+  // ---------- events ----------
+  function bindMain(g) {
+    const wn = $('#welcomeNew'); if (wn) wn.onclick = openDialog;
+    if (!g) return;
+    $('#main').querySelectorAll('[data-d]').forEach(b => b.onclick = () => addScore(b.dataset.pid, +b.dataset.d));
+    $('#main').querySelectorAll('[data-custom]').forEach(i => i.onkeydown = e => {
+      if (e.key === 'Enter') { addScore(i.dataset.custom, parseInt(i.value, 10)); }
+    });
+    $('#main').querySelectorAll('[data-remove]').forEach(b => b.onclick = async () => {
+      const p = g.players.find(x => x.id === b.dataset.remove);
+      if (p && await ask(`Remove ${p.name} and their scores?`)) {
+        g.players = g.players.filter(x => x.id !== p.id);
+        g.events = g.events.filter(e => e.pid !== p.id);
+        save(); render();
+      }
+    });
+    $('#addPlayer').onsubmit = e => {
+      e.preventDefault();
+      addPlayer(g, new FormData(e.target).get('name'));
+      save(); render();
+    };
+    $('#undo').onclick = () => { g.events.pop(); save(); render(); };
+    $('#resetScores').onclick = async () => { if (await ask('Reset all scores in this game?')) { g.events = []; save(); render(); } };
+    $('#deleteGame').onclick = async () => {
+      if (!await ask(`Delete "${g.name}"?`)) return;
+      state.games = state.games.filter(x => x.id !== g.id);
+      state.current = state.games.length ? state.games[0].id : null;
+      save(); render();
+    };
+  }
+
+  const dlg = $('#gameDialog');
+  function openDialog() { $('#gameForm').reset(); dlg.showModal(); }
+  $('#newGame').onclick = openDialog;
+  $('#cancelGame').onclick = () => dlg.close();
+  $('#gameForm').onsubmit = e => {
+    const f = new FormData(e.target);
+    const name = String(f.get('name')).trim();
+    if (!name) return;
+    newGame({
+      name,
+      players: String(f.get('players')).split(',').map(s => s.trim()).filter(Boolean).slice(0, 16),
+      target: parseInt(f.get('target'), 10) || null,
+      rule: f.get('rule') === 'low' ? 'low' : 'high',
+    });
+  };
+
+  $('#exportBtn').onclick = () => {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' }));
+    a.download = 'scorekeep-' + new Date().toISOString().slice(0, 10) + '.json';
+    a.click(); URL.revokeObjectURL(a.href);
+  };
+  $('#importBtn').onclick = () => $('#importFile').click();
+  $('#importFile').onchange = async e => {
+    const file = e.target.files[0]; e.target.value = '';
+    if (!file) return;
+    try {
+      const s = JSON.parse(await file.text());
+      if (!s || !Array.isArray(s.games)) throw new Error('bad shape');
+      if (!await ask('Replace all current data with the imported file?')) return;
+      state = { games: s.games, current: s.current || (s.games[0] && s.games[0].id) || null };
+      save(); render();
+    } catch (err) { ask('That file is not a valid Scorekeep export.', true); }
+  };
+
+  render();
+})();
+</script>
+</body>
+</html>
